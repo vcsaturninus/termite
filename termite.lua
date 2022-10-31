@@ -1,7 +1,7 @@
 --[[
 ----------------------------------------------------------------
 -- termite 
---      basic terminal effects and manipulation  --
+--      Lua bindings for basic terminal control sequences --
 --      (c) 2022 vcsaturninus -- vcsaturninus@protonmail.com
 ----------------------------------------------------------------
 

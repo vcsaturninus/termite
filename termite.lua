@@ -23,8 +23,8 @@ local M = {}
 -- which are consequently referred to as CSI sequences.
 M.CSI  = "\27["
 
--- resets any terminal properties effected by previously applied control sequences.
-M.RESET   = M.CSI .. "0" .. "m"
+-- resets any terminal properties effected by previously applied SGR sequences.
+M.SGR_RESET   = M.CSI .. "0" .. "m"
 
 -- The most commonly used attributes are the so-called Select Graphic Rendition (SGR) subset
 -- of CSI. These are used to set display attributes (color, style etc). The list provided below 
@@ -170,7 +170,7 @@ function M.decorate(text, ...)
 
     if #{...} == 0 then return text end
     
-    return format_sgr_sequence(...) .. text .. M.RESET
+    return format_sgr_sequence(...) .. text .. M.SGR_RESET
 end
 
 return M

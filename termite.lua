@@ -179,6 +179,59 @@ end
 ----- Graphic Progress Indicators -------
 ----------------------------------------
 
+-- Public interface of all Loader objects.
+--
+-- Each specific loader type is created via a call to one of the
+-- functions below: get_cyclic_loader(), get_loading_spinner() etc.
+-- These functions first create an instance of Loader, then populate
+-- it with specific fields which vary from case to case.
+--
+-- The interface implemented by Loader consists of 3 methods the client
+-- can and must call for any loader type:
+--   * .next()   -- advance progress state by one unit
+--   * .report() -- print out a progress report accompanied by optional message
+--   * .done()   -- print final progress state accompanied by optional message
+--
+-- Each loader will implement these function differently. To hook into the generic
+-- interface exposed by Loader, every specific loader object must implement 2 methods:
+--   * .advance__()  -- called by .next()
+--   * .report__()   -- called by .report()
+--
+-- This allows a primitive form of interface inheritance and virtual method overriding.
+--
+local Loader = {}
+Loader.__index = Loader
+
+function Loader.next(self)
+    -- hook for overriding
+    self:advance__()
+end
+
+function Loader.report(self, msg)
+    self:report__(msg)
+    print(M.move(M.PREVL, 2))  -- clear
+end
+
+-- Clear line: this must be done to prevent the case where a wide progress bar
+-- or somesuch indicator is used and subsequent text only partially overwrites it.
+-- Wait specified number of seconds before clearing so the user has
+-- time to see whatever final report (and optional message) is printed.
+function Loader.done(self, msg, waitsecs)
+    self:report__(msg)
+
+    if waitsecs then
+        os.execute("sleep " .. tostring(waitsecs))
+    end
+    -- note we need to move 2 lines UP because we start 1 line below, AND print
+    -- will append a '\n' as well when we print this.
+    print(M.move(M.PREVL, 2))  -- clear
+end
+
+-- Create Loader stub with public interface implementation
+function Loader.new()
+    return setmetatable({}, Loader)
+end
+
 --[[
     Create and return a percentage loader.
 
@@ -191,13 +244,13 @@ end
     A loader instance.
 --]]
 function M.get_percentage_loader(num_steps)
-    local self           = {}
+    local self           = Loader.new()
     self.whole           = num_steps -- total number of steps until 100%
-    self.steps_completed = 0          -- number of steps completed so far
+    self.steps_completed = 0         -- number of steps completed so far
     self.progress        = math.floor(self.steps_completed / self.whole)
 
     -- increment step and adjust loader state
-    local function next(self)
+    function self.advance__(self)
         if self.steps_completed == self.whole then
             return -- complete
         end
@@ -206,28 +259,9 @@ function M.get_percentage_loader(num_steps)
     end
 
     -- print a report of current progress to stdout
-    local function report(self, msg)
-        --print("steps = ", self.steps_completed)
+    function self.report__(self, msg)
         print(string.format("%s%s %s", self.progress, '%', msg or ""))
-        -- note we need to move 2 lines UP because we start 1 line below, AND print
-        -- will append a '\n' as well when we print this.
-        print(M.move(M.PREVL, 2))
     end
-
-    -- clear line; this must be done to prevent the case where a wide progress bar
-    -- is used and subsequent text only partially overwrites it; wait specified number
-    -- of seconds before clearing so the user has time to see whatever final message.
-    local function done(self, msg, waitsecs)
-        print(string.format("%s%s %s", self.progress, '%', msg or ""))
-        if waitsecs then
-            os.execute("sleep " .. tostring(waitsecs))
-        end
-        print(M.move(M.PREVL, 2))  -- clear
-    end
-
-    self.next   = next
-    self.report = report
-    self.done   = done
 
     return self
 end
@@ -264,37 +298,27 @@ function M.get_loading_spinner(positions, ...)
         assert(type(positions) == "table", "Invalid param; 'positions' must be a table")
     end
 
-    local self           = {}
+    local self           = Loader.new()
     self.positions       = positions or {"|", "/", "-", "\\"}
     self.num_positions   = #self.positions
     self.steps_completed = 1      -- index of the current position
     self.sgr_attr        = {...}  -- any number of SGR attributes specified
 
     -- format before printing
-    local function __format(char, ...)
+    function self.format__(char, ...)
         return M.decorate(char, M.BOLD, ...)
     end
 
-    local function next(self)
+    function self.advance__(self)
         self.steps_completed = (self.steps_completed % self.num_positions) + 1
     end
 
-    local function report(self, message)
-        print(string.format("%s %s", __format(self.positions[self.steps_completed], table.unpack(self.sgr_attr)), message or ""))
-        print(M.move(M.PREVL, 2))
+    function self.report__(self, message)
+        print(string.format("%s %s",
+                            self.format__(self.positions[self.steps_completed], table.unpack(self.sgr_attr)),
+                            message or "")
+             )
     end
-
-    local function done(self, msg, waitsecs)
-        print(string.format("%s %s", __format(self.positions[self.steps_completed], table.unpack(self.sgr_attr)), message or ""))
-        if waitsecs then
-            os.execute("sleep " .. tostring(waitsecs))
-        end
-        print(M.move(M.PREVL, 2))
-    end
-
-    self.next   = next
-    self.report = report
-    self.done   = done
 
     return self
 end
@@ -347,18 +371,17 @@ end
     A loader instance.
 --]]
 function M.get_progress_bar(num_steps, num_units, lmarker, rmarker, filler, void)
-    local self = {
-        whole            = num_units or 30,  -- total number of units representing a completed whole
-        units_completed  = 0,                -- total number of units completed
-        total_steps      = num_steps,        -- total number of steps representing a completed whole
-        steps_completed  = 0,                -- total number of steps completed
-        lmarker = lmarker or '[',
-        rmarker = rmarker or ']',
-        filler  = filler or '#',  -- symbol used to fill the bar to represent progress
-        void    = void or ' '      -- symbol used to show how much of the bar is left to fill
-    }
+    local self = Loader.new()
+    self.whole            = num_units or 30  -- total number of units representing a completed whole
+    self.units_completed  = 0                -- total number of units completed
+    self.total_steps      = num_steps        -- total number of steps representing a completed whole
+    self.steps_completed  = 0                -- total number of steps completed
+    self.lmarker = lmarker or '['
+    self.rmarker = rmarker or ']'
+    self.filler  = filler or '#'  -- symbol used to fill the bar to represent progress
+    self.void    = void or ' '    -- symbol used to show how much of the bar is left to fill
 
-    local function next(self)
+    function self.advance__(self)
         -- if complete, pregres bar is filled
         if self.steps_completed == self.total_steps then return end
 
@@ -374,7 +397,7 @@ function M.get_progress_bar(num_steps, num_units, lmarker, rmarker, filler, void
         end
     end
 
-    local function __report(self, msg)
+    function self.report__(self, msg)
         print(string.format("  %s%s%s%s %s",
                                 self.lmarker,
                                 string.rep(self.filler, self.units_completed),
@@ -384,22 +407,6 @@ function M.get_progress_bar(num_steps, num_units, lmarker, rmarker, filler, void
                                 )
     end
 
-    local function report(self, msg)
-        __report(self, msg)
-        print(M.move(M.PREVL, 2))
-    end
-
-    local function done(self, msg, waitsecs)
-        __report(self, msg)
-        if waitsecs then
-            os.execute("sleep " .. tostring(waitsecs))
-        end
-        print(M.move(M.PREVL, 2))
-    end
-
-    self.next   = next
-    self.report = report
-    self.done   = done
     return self
 end
 
@@ -411,16 +418,16 @@ end
     for as long as the iteration continues.
 --]]
 function M.get_ouroborous_bar(num_units, lmarker, rmarker, filler, void)
-    local self = {
-        whole            = num_units or 30,  -- total number of units representing a completed whole
-        units_completed  = 0,                -- total number of units completed
-        lmarker = lmarker or '[',
-        rmarker = rmarker or ']',
-        filler  = filler or '#',  -- symbol used to fill the bar to represent progress
-        void    = void or ' '      -- symbol used to show how much of the bar is left to fill
-    }
+    local self = Loader.new()
 
-    local function next(self)
+    self.whole            = num_units or 30  -- total number of units representing a completed whole
+    self.units_completed  = 0                -- total number of units completed
+    self.lmarker = lmarker or '['
+    self.rmarker = rmarker or ']'
+    self.filler  = filler or '#'   -- symbol used to fill the bar to represent progress
+    self.void    = void or ' '      -- symbol used to show how much of the bar is left to fill
+
+    function self.advance__(self)
         -- if complete, progress bar is filled; flip void and filler unit symbols
         if self.units_completed == self.whole then
             self.void, self.filler = self.filler, self.void
@@ -431,7 +438,7 @@ function M.get_ouroborous_bar(num_units, lmarker, rmarker, filler, void)
         self.units_completed = self.units_completed+1
     end
 
-    local function __report(self, msg)
+    function self.report__(self, msg)
         print(string.format("  %s%s%s%s %s",
                                 self.lmarker,
                                 string.rep(self.filler, self.units_completed),
@@ -441,22 +448,6 @@ function M.get_ouroborous_bar(num_units, lmarker, rmarker, filler, void)
                                 )
     end
 
-    local function report(self, msg)
-        __report(self, msg)
-        print(M.move(M.PREVL, 2))
-    end
-
-    local function done(self, msg, waitsecs)
-        __report(self, msg)
-        if waitsecs then
-            os.execute("sleep " .. tostring(waitsecs))
-        end
-        print(M.move(M.PREVL, 2))
-    end
-
-    self.next   = next
-    self.report = report
-    self.done   = done
     return self
 end
 
@@ -484,34 +475,33 @@ function M.get_cyclic_loader(units, lmarker, rmarker, symbols, void, ...)
         error("Invalid parameter 'symbols': must be an array with at least one element")
     end
 
-    local self = {
-        whole            = num_units or 30,  -- total number of units representing a completed whole
-        units_completed  = 0,                -- total number of units completed
-        lmarker  = lmarker or '[',
-        rmarker  = rmarker or ']',
-        symbols  = symbols or {'#'},  -- symbol used to fill the bar to represent progress
-        void     = void or ' ',       -- symbol used to show how much of the bar is left to fill
-        sgr_attr = {...}              -- any number of SGR attributes specified
-    }
+    local self = Loader.new()
+    self.whole            = num_units or 30   -- total number of units representing a completed whole
+    self.units_completed  = 0                 -- total number of units completed
+    self.lmarker  = lmarker or '['
+    self.rmarker  = rmarker or ']'
+    self.symbols  = symbols or {'#'}   -- symbol used to fill the bar to represent progress
+    self.void     = void or ' '        -- symbol used to show how much of the bar is left to fill
+    self.sgr_attr = {...}              -- any number of SGR attributes specified
     self.current = self.symbols[1]
 
     -- format before printing
-    local function __format(char, ...)
+    function self.format__(char, ...)
         return M.decorate(char, M.BOLD, ...)
     end
 
-    local function __report(self, msg)
+    function self.report__(self, msg)
         print(string.format("  %s%s%s%s%s %s",
                             self.lmarker,
                             string.rep(self.void, self.units_completed-1),
-                            string.rep(__format(self.current, table.unpack(self.sgr_attr)), 1),
+                            string.rep(self.format__(self.current, table.unpack(self.sgr_attr)), 1),
                             string.rep(self.void, self.whole - self.units_completed),
                             self.rmarker,
                             msg or "")
                             )
     end
 
-    local function next(self)
+    function self.advance__(self)
         if self.units_completed == self.whole then
             self.units_completed=0
         end
@@ -521,23 +511,6 @@ function M.get_cyclic_loader(units, lmarker, rmarker, symbols, void, ...)
         local idx    = (self.units_completed % #self.symbols) + 1
         self.current = self.symbols[idx]
     end
-
-    local function report(self, msg)
-        __report(self, msg)
-        print(M.move(M.PREVL, 2))
-    end
-
-    local function done(self, msg, waitsecs)
-        __report(self, msg)
-        if waitsecs then
-            os.execute("sleep " .. tostring(waitsecs))
-        end
-        print(M.move(M.PREVL, 2))
-    end
-
-    self.next   = next
-    self.report = report
-    self.done   = done
 
     return self
 end

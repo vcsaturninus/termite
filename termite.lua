@@ -1,6 +1,6 @@
 --[[
 ----------------------------------------------------------------
--- termite 
+-- termite
 --      Lua bindings for basic terminal control sequences --
 --      (c) 2022 vcsaturninus -- vcsaturninus@protonmail.com
 ----------------------------------------------------------------
@@ -18,8 +18,8 @@ local M = {}
     ANSI terminal escape sequences.
 --]]-------------------------------
 
--- \0x1b[ (\27 decimal) is referred to as the CSI - Control Sequence Introducer; 
--- The CSI functions as an escape, preceding most useful control sequences -- 
+-- \0x1b[ (\27 decimal) is referred to as the CSI - Control Sequence Introducer;
+-- The CSI functions as an escape, preceding most useful control sequences --
 -- which are consequently referred to as CSI sequences.
 M.CSI  = "\27["
 
@@ -27,12 +27,12 @@ M.CSI  = "\27["
 M.SGR_RESET   = M.CSI .. "0" .. "m"
 
 -- The most commonly used attributes are the so-called Select Graphic Rendition (SGR) subset
--- of CSI. These are used to set display attributes (color, style etc). The list provided below 
+-- of CSI. These are used to set display attributes (color, style etc). The list provided below
 -- is not exhaustive: it includes only the basic, most widely supported attributes.
 --
 -- SGR SCI sequences are of the form: CSI n m (where n is a numeric value).
 --
--- An arbitrary number of SGR attributes can be set as part of the same sequence, 
+-- An arbitrary number of SGR attributes can be set as part of the same sequence,
 -- separated by semicolons: <CSI>30;31;35m
 --
 M.BOLD        = 1       -- make text bold  (increased intensity)
@@ -47,10 +47,10 @@ M.NOBLINK     = 25      -- turn off blinking attribute
 M.NOINVERT    = 27      -- turn off INVERT attribute
 
 ---------------------------------------------------------------------------
--- This Module only lists the basic 4-bit colors; 
+-- This Module only lists the basic 4-bit colors;
 -- That is, 2^4 foreground and 2^4 backround colors, respectively.
 -- Modern terminal emulators now vastly support 'true color', where
--- 8 bits (2^8 colors for foreground, backround) are used for encoding 
+-- 8 bits (2^8 colors for foreground, backround) are used for encoding
 -- the color set. However, for basic purposes these are rarely a necessity.
 ---------------------------------------------------------------------------
 -- foreground colors
@@ -126,7 +126,7 @@ function M.move(dir, n)
 end
 
 --[[
-    Return a CSI sequence of semicolon-separated attributes.
+    Return a CSI SGR sequence of semicolon-separated attributes.
 
 --> ...
     An arbitrary number of SGR attributes to format into a single CSI sequence.
@@ -143,7 +143,7 @@ local function format_sgr_sequence(...)
     for _,attr in ipairs(sgr_attributes) do
         sequence = sequence .. tostring(attr) .. sep
     end
-    
+
     -- strip trailing ';' and add CSI prefix and SGR suffix
     return string.format("%s%s%s", M.CSI, sequence:sub(1,-2), "m")
 end
@@ -166,11 +166,380 @@ end
     A string representing the input text decoarated with specified attributes.
 --]]
 function M.decorate(text, ...)
-    assert(text, "Mandatory param left unspecified: 'text'") 
+    assert(text, "Mandatory param left unspecified: 'text'")
 
     if #{...} == 0 then return text end
-    
+
     return format_sgr_sequence(...) .. text .. M.SGR_RESET
+end
+
+---------------------------------------------------------------------------------
+
+-----------------------------------------
+----- Graphic Progress Indicators -------
+----------------------------------------
+
+--[[
+    Create and return a percentage loader.
+
+--> num_steps
+    The total number of steps until completion. This must be known
+    beforehard and so this loader is only appropriate for DEFINITE
+    iteration.
+
+<-- return, table
+    A loader instance.
+--]]
+function M.get_percentage_loader(num_steps)
+    local self           = {}
+    self.whole           = num_steps -- total number of steps until 100%
+    self.steps_completed = 0          -- number of steps completed so far
+    self.progress        = math.floor(self.steps_completed / self.whole)
+
+    -- increment step and adjust loader state
+    local function next(self)
+        if self.steps_completed == self.whole then
+            return -- complete
+        end
+        self.steps_completed = self.steps_completed+1
+        self.progress        = math.floor((self.steps_completed / self.whole) * 100)
+    end
+
+    -- print a report of current progress to stdout
+    local function report(self, msg)
+        --print("steps = ", self.steps_completed)
+        print(string.format("%s%s %s", self.progress, '%', msg or ""))
+        -- note we need to move 2 lines UP because we start 1 line below, AND print
+        -- will append a '\n' as well when we print this.
+        print(M.move(M.PREVL, 2))
+    end
+
+    -- clear line; this must be done to prevent the case where a wide progress bar
+    -- is used and subsequent text only partially overwrites it; wait specified number
+    -- of seconds before clearing so the user has time to see whatever final message.
+    local function done(self, msg, waitsecs)
+        print(string.format("%s%s %s", self.progress, '%', msg or ""))
+        if waitsecs then
+            os.execute("sleep " .. tostring(waitsecs))
+        end
+        print(M.move(M.PREVL, 2))  -- clear
+    end
+
+    self.next   = next
+    self.report = report
+    self.done   = done
+
+    return self
+end
+
+--[[
+    Create and return a spinning loader.
+
+    This loader is appropriate for INDEFINITE iteration
+    where the number of steps is unknown starting out.
+
+--> positions, array
+    @optional
+    @default {"|", "/", "-", "\\"}
+    An array of char symbols that this function will cycle through with
+    every completed step.
+
+--> ..., array
+    @optional
+    @default termite.BOLD
+    An array of SGR attributes to apply to the symbol when it gets printed to
+    the console. This means that if POSITIONS is specified, each element in that
+    array will have the same attributes applied.
+
+    Note that if the user specifies a POSITIONS array they could even customize
+    each element independently BEFORE inserting it into the array; that would be
+    a more granular way of customizing each step symbol. Whereas the variadic
+    argument is a list of SGR attributes to be applied indiscriminately to ALL.
+
+<-- return, table
+    A loader instance.
+--]]
+function M.get_loading_spinner(positions, ...)
+    if positions then
+        assert(type(positions) == "table", "Invalid param; 'positions' must be a table")
+    end
+
+    local self           = {}
+    self.positions       = positions or {"|", "/", "-", "\\"}
+    self.num_positions   = #self.positions
+    self.steps_completed = 1      -- index of the current position
+    self.sgr_attr        = {...}  -- any number of SGR attributes specified
+
+    -- format before printing
+    local function __format(char, ...)
+        return M.decorate(char, M.BOLD, ...)
+    end
+
+    local function next(self)
+        self.steps_completed = (self.steps_completed % self.num_positions) + 1
+    end
+
+    local function report(self, message)
+        print(string.format("%s %s", __format(self.positions[self.steps_completed], table.unpack(self.sgr_attr)), message or ""))
+        print(M.move(M.PREVL, 2))
+    end
+
+    local function done(self, msg, waitsecs)
+        print(string.format("%s %s", __format(self.positions[self.steps_completed], table.unpack(self.sgr_attr)), message or ""))
+        if waitsecs then
+            os.execute("sleep " .. tostring(waitsecs))
+        end
+        print(M.move(M.PREVL, 2))
+    end
+
+    self.next   = next
+    self.report = report
+    self.done   = done
+
+    return self
+end
+
+--[[
+    Create and return a progress bar.
+
+    A progress bar is made up of two markers either side, a filler symbol
+    in between representing progress made, and a 'void' symbol (typically
+    whitespace) indicating how much progress is left to be made.
+
+    Each unit has a corresponding progress weight depending on the total number
+    of units. For example, in a 15-unit progress bar, each unit is
+    worth 1/15.
+
+--> steps, int
+    The total number of steps until completion. This must be known
+    beforehard and so this loader is only appropriate for DEFINITE
+    iteration.
+
+--> units, int
+    @optional
+    @default 30
+    How many units the progress bar consists of. Since the width of the bar
+    is directly proportional to the number of units, this should be something
+    reasonable that fits on the screen.
+
+--> lmarker, char
+    @optional
+    @default '['
+    The left marker to use to bound the progress bar on the left side.
+
+--> rmarker, char
+    @optional
+    @default '['
+    The right marker to use to bound the progress bar on the right side.
+
+--> filler, char
+    @optional
+    @default '#'
+    The unit symbol to use between the two progress bar markers in order
+    to represent progress.
+
+--> void, char
+    @optional
+    @default ' '
+    The unit to use to show how much more progress is left to be made.
+
+<-- return
+    A loader instance.
+--]]
+function M.get_progress_bar(num_steps, num_units, lmarker, rmarker, filler, void)
+    local self = {
+        whole            = num_units or 30,  -- total number of units representing a completed whole
+        units_completed  = 0,                -- total number of units completed
+        total_steps      = num_steps,        -- total number of steps representing a completed whole
+        steps_completed  = 0,                -- total number of steps completed
+        lmarker = lmarker or '[',
+        rmarker = rmarker or ']',
+        filler  = filler or '#',  -- symbol used to fill the bar to represent progress
+        void    = void or ' '      -- symbol used to show how much of the bar is left to fill
+    }
+
+    local function next(self)
+        -- if complete, pregres bar is filled
+        if self.steps_completed == self.total_steps then return end
+
+        -- increment number of steps completed
+        self.steps_completed = self.steps_completed + 1
+
+        -- the number of units is incremented IFF the ratio of
+        -- steps completed : total steps is >= to the ratio of
+        -- units completed : whole.
+        if self.steps_completed / self.total_steps >= (self.units_completed / self.whole) then
+            local progress_made = self.steps_completed / self.total_steps
+            self.units_completed = math.floor(progress_made * self.whole)
+        end
+    end
+
+    local function __report(self, msg)
+        print(string.format("  %s%s%s%s %s",
+                                self.lmarker,
+                                string.rep(self.filler, self.units_completed),
+                                string.rep(self.void, self.whole - self.units_completed),
+                                self.rmarker,
+                                msg or "")
+                                )
+    end
+
+    local function report(self, msg)
+        __report(self, msg)
+        print(M.move(M.PREVL, 2))
+    end
+
+    local function done(self, msg, waitsecs)
+        __report(self, msg)
+        if waitsecs then
+            os.execute("sleep " .. tostring(waitsecs))
+        end
+        print(M.move(M.PREVL, 2))
+    end
+
+    self.next   = next
+    self.report = report
+    self.done   = done
+    return self
+end
+
+--[[
+    Create and return a repeating 'ourobourous' progress bar.
+
+    Like a normal progress bar (see that FMI), but appropriate for indefinite
+    iteration: number of steps is unknown starting out; the progress bar oscillates
+    for as long as the iteration continues.
+--]]
+function M.get_ouroborous_bar(num_units, lmarker, rmarker, filler, void)
+    local self = {
+        whole            = num_units or 30,  -- total number of units representing a completed whole
+        units_completed  = 0,                -- total number of units completed
+        lmarker = lmarker or '[',
+        rmarker = rmarker or ']',
+        filler  = filler or '#',  -- symbol used to fill the bar to represent progress
+        void    = void or ' '      -- symbol used to show how much of the bar is left to fill
+    }
+
+    local function next(self)
+        -- if complete, progress bar is filled; flip void and filler unit symbols
+        if self.units_completed == self.whole then
+            self.void, self.filler = self.filler, self.void
+            self.units_completed   = 0
+        end
+
+        -- increment number of steps completed
+        self.units_completed = self.units_completed+1
+    end
+
+    local function __report(self, msg)
+        print(string.format("  %s%s%s%s %s",
+                                self.lmarker,
+                                string.rep(self.filler, self.units_completed),
+                                string.rep(self.void, self.whole - self.units_completed),
+                                self.rmarker,
+                                msg or "")
+                                )
+    end
+
+    local function report(self, msg)
+        __report(self, msg)
+        print(M.move(M.PREVL, 2))
+    end
+
+    local function done(self, msg, waitsecs)
+        __report(self, msg)
+        if waitsecs then
+            os.execute("sleep " .. tostring(waitsecs))
+        end
+        print(M.move(M.PREVL, 2))
+    end
+
+    self.next   = next
+    self.report = report
+    self.done   = done
+    return self
+end
+
+--[[
+    Create and return a cyclic symbol loader.
+
+    This loader offers a different take on progress bars suitable
+    for indefinite iteration. It's much like the ouroborous bar,
+    but instead of a progress bar alternating between being filled
+    and emptied, this loader moves a filler symbol left to right through
+    every cell along the width of the bar. A SET of symbols can be
+    specified rather than a single symbol, in which case the loader
+    will cycle through the set as it goes from left to right.
+
+--> symbols, array
+    @optional
+    @default {'#'}
+    Array of symbols to cycle through.
+
+FMI, see the comments for the Ourobourous loader function.
+For '...' meaning, see comment for loading_spinner.
+--]]
+function M.get_cyclic_loader(units, lmarker, rmarker, symbols, void, ...)
+    if symbols and (type(symbols) ~= "table" or #symbols == 0) then
+        error("Invalid parameter 'symbols': must be an array with at least one element")
+    end
+
+    local self = {
+        whole            = num_units or 30,  -- total number of units representing a completed whole
+        units_completed  = 0,                -- total number of units completed
+        lmarker  = lmarker or '[',
+        rmarker  = rmarker or ']',
+        symbols  = symbols or {'#'},  -- symbol used to fill the bar to represent progress
+        void     = void or ' ',       -- symbol used to show how much of the bar is left to fill
+        sgr_attr = {...}              -- any number of SGR attributes specified
+    }
+    self.current = self.symbols[1]
+
+    -- format before printing
+    local function __format(char, ...)
+        return M.decorate(char, M.BOLD, ...)
+    end
+
+    local function __report(self, msg)
+        print(string.format("  %s%s%s%s%s %s",
+                            self.lmarker,
+                            string.rep(self.void, self.units_completed-1),
+                            string.rep(__format(self.current, table.unpack(self.sgr_attr)), 1),
+                            string.rep(self.void, self.whole - self.units_completed),
+                            self.rmarker,
+                            msg or "")
+                            )
+    end
+
+    local function next(self)
+        if self.units_completed == self.whole then
+            self.units_completed=0
+        end
+
+        -- increment number of steps completed
+        self.units_completed = self.units_completed+1
+        local idx    = (self.units_completed % #self.symbols) + 1
+        self.current = self.symbols[idx]
+    end
+
+    local function report(self, msg)
+        __report(self, msg)
+        print(M.move(M.PREVL, 2))
+    end
+
+    local function done(self, msg, waitsecs)
+        __report(self, msg)
+        if waitsecs then
+            os.execute("sleep " .. tostring(waitsecs))
+        end
+        print(M.move(M.PREVL, 2))
+    end
+
+    self.next   = next
+    self.report = report
+    self.done   = done
+
+    return self
 end
 
 return M

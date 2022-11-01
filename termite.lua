@@ -186,14 +186,15 @@ end
 -- These functions first create an instance of Loader, then populate
 -- it with specific fields which vary from case to case.
 --
--- The interface implemented by Loader consists of 3 methods the client
+-- The interface implemented by Loader consists of 3 methods the user
 -- can and must call for any loader type:
 --   * .next()   -- advance progress state by one unit
 --   * .report() -- print out a progress report accompanied by optional message
 --   * .done()   -- print final progress state accompanied by optional message
 --
--- Each loader will implement these function differently. To hook into the generic
--- interface exposed by Loader, every specific loader object must implement 2 methods:
+-- Each loader will implement the behavior differently. To hook into the generic
+-- interface exposed by Loader, every specific loader object must implement 2 private
+-- methods:
 --   * .advance__()  -- called by .next()
 --   * .report__()   -- called by .report()
 --

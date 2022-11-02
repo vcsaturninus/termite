@@ -18,7 +18,24 @@ local M = {}
     ANSI terminal escape sequences.
 --]]-------------------------------
 
--- \0x1b[ (\27 decimal) is referred to as the CSI - Control Sequence Introducer;
+-- C0 control codes:
+-- These are the most basic single-byte control chars: \n for newline,
+-- \b for backspace etc.
+--
+-- A C0 character can be expressed as a standalone embedded byte or in a
+-- sequence initiated by the ESC code (the same as a CSI sequence),
+-- followed by a character identifying the control code. For instance,
+-- tab (\t) can be expressed either as \0x9 or as \0x1B[I
+--
+M.BEL   = '\0x7'   -- bell
+M.BS    = '\0x8'   -- backspace
+M.HT    = '\0x9'   -- horizontal tab
+M.LF    = '\0x0A'  -- line feed
+M.FF    = '\0x0C'  -- form feed
+M.CR    = '\0x0D'  -- carriage return
+M.ESC   = '\0x1B'  -- escape; starts all sequences (C0, CSI etc)
+
+-- \0x1b[ (\27[ decimal) is referred to as the CSI - Control Sequence Introducer;
 -- The CSI functions as an escape, preceding most useful control sequences --
 -- which are consequently referred to as CSI sequences.
 M.CSI  = "\27["
@@ -100,14 +117,16 @@ M.CLEARL        = M.CSI .. "2K"    -- clear whole line
 M.CLEARL_TO     = M.CSI .. "1K"    -- clear everything on the line before cursor
 M.CLEARL_FROM   = M.CSI .. "0K"    -- clear everything on the line after cursor
 
-M.UP            = 'A'    -- move cursor one cell up
-M.DOWN          = 'B'    -- //-- down
-M.RIGHT         = 'C'    -- //-- to the right
-M.LEFT          = 'D'    -- //-- to the left
-M.NEXTL         = 'E'    -- move cursor n (default 1) lines down, to the start of the line
-M.PREVL         = 'F'    -- move cursor n (default 1) lines up, to the start of the line
+M.CUU   = 'A'    -- move cursor one cell up (cursor up)
+M.CUD   = 'B'    -- //-- down (cursor down)
+M.CUF   = 'C'    -- //-- to the right (cursor forward)
+M.CUB   = 'D'    -- //-- to the left (cursor back)
+M.CNL   = 'E'    -- move cursor n (default 1) lines down, to the start of the line
+M.CPL   = 'F'    -- move cursor n (default 1) lines up, to the start of the line
+M.SU    = 'S'    -- scroll whole page up by n (default 1) lines
+M.SD    = 'T'    -- scroll whole page down by n (default 1) lines
+M.CUP   = 'H'    -- move cursor to row n, column m (default 1,1).
 
--- todo add CS0
 
 --[[
     Return a CSI control sequence for conveying the specified movement action.
@@ -119,10 +138,21 @@ M.PREVL         = 'F'    -- move cursor n (default 1) lines up, to the start of 
     @optional
     @default 1
     The number of cells to move in the specified direction.
+
+--> m, int
+    @optional
+    @default 1
+    If dir is M.CUP (cursor position), then a second parameter -m- can be specified;
+    n and m are interpreted as the row and column, respectively, to move the cursor
+    to. If unspecified, these default to 1,1 (top left corner).
 --]]
-function M.move(dir, n)
+function M.move(dir, n, m)
     assert(dir, "Mandatory parameter left unspecified: 'dir'")
-    return M.CSI .. tostring(n or 1) .. dir
+    if dir ~= M.CUP then
+        return M.CSI .. tostring(n or 1) .. dir
+    else
+        return M.CSI .. tostring(n or 1) .. ';' .. tostring(m or 1) .. dir
+    end
 end
 
 --[[
@@ -186,15 +216,14 @@ end
 -- These functions first create an instance of Loader, then populate
 -- it with specific fields which vary from case to case.
 --
--- The interface implemented by Loader consists of 3 methods the user
+-- The interface implemented by Loader consists of 3 methods the client
 -- can and must call for any loader type:
 --   * .next()   -- advance progress state by one unit
 --   * .report() -- print out a progress report accompanied by optional message
 --   * .done()   -- print final progress state accompanied by optional message
 --
--- Each loader will implement the behavior differently. To hook into the generic
--- interface exposed by Loader, every specific loader object must implement 2 private
--- methods:
+-- Each loader will implement these function differently. To hook into the generic
+-- interface exposed by Loader, every specific loader object must implement 2 methods:
 --   * .advance__()  -- called by .next()
 --   * .report__()   -- called by .report()
 --
@@ -210,7 +239,7 @@ end
 
 function Loader.report(self, msg)
     self:report__(msg)
-    print(M.move(M.PREVL, 2))  -- clear
+    print(M.move(M.CPL, 2))  -- clear
 end
 
 -- Clear line: this must be done to prevent the case where a wide progress bar
@@ -225,7 +254,7 @@ function Loader.done(self, msg, waitsecs)
     end
     -- note we need to move 2 lines UP because we start 1 line below, AND print
     -- will append a '\n' as well when we print this.
-    print(M.move(M.PREVL, 2))  -- clear
+    print(M.move(M.CPL, 2))  -- clear
 end
 
 -- Create Loader stub with public interface implementation

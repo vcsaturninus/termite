@@ -18,33 +18,61 @@ local M = {}
     ANSI terminal escape sequences.
 --]]-------------------------------
 
--- C0 control codes:
+-----------------------
+-- C0 control codes
+----------------------
 -- These are the most basic single-byte control chars: \n for newline,
 -- \b for backspace etc.
 --
--- A C0 character can be expressed as a standalone embedded byte or in a
--- sequence initiated by the ESC code (the same as a CSI sequence),
+-- A C0 control code can be expressed as a standalone embedded 1-byte char
+-- or in a sequence initiated by the SCI (making it therefore a CSI sequence),
 -- followed by a character identifying the control code. For instance,
--- tab (\t) can be expressed either as \0x9 or as \0x1B[I
+-- tab (\t) can be expressed either as \x09 or as \x1B[I
 --
-M.BEL   = '\0x7'   -- bell
-M.BS    = '\0x8'   -- backspace
-M.HT    = '\0x9'   -- horizontal tab
-M.LF    = '\0x0A'  -- line feed
-M.FF    = '\0x0C'  -- form feed
-M.CR    = '\0x0D'  -- carriage return
-M.ESC   = '\0x1B'  -- escape; starts all sequences (C0, CSI etc)
+M.BEL   = '\x07'   -- bell
+M.BS    = '\x08'   -- backspace
+M.HT    = '\x09'   -- horizontal tab
+M.LF    = '\x0A'   -- line feed
+M.FF    = '\x0C'   -- form feed
+M.CR    = '\x0D'   -- carriage return
+M.ESC   = '\x1B'   -- escape; starts all sequences (C0, CSI etc)
 
--- \0x1b[ (\27[ decimal) is referred to as the CSI - Control Sequence Introducer;
+------------------
+-- CSI sequences
+------------------
+--
+-- The combination of the ESC code followed by the opening square bracket '['
+-- is referred to as the CSI - Control Sequence Introducer;
 -- The CSI functions as an escape, preceding most useful control sequences --
 -- which are consequently referred to as CSI sequences.
-M.CSI  = "\27["
+M.CSI  = M.ESC .. '['
 
--- resets any terminal properties effected by previously applied SGR sequences.
-M.SGR_RESET   = M.CSI .. "0" .. "m"
+-- Mnemonics for clearing (parts of) screen or line
+M.CLEARS        = M.CSI .. "2J"    -- clear whole screen
+M.CLEARS_TO     = M.CSI .. "1J"    -- clear everything on screen before cursor
+M.CLEARS_FROM   = M.CSI .. "0J"    -- clear everything on screen after cursor
 
+M.CLEARL        = M.CSI .. "2K"    -- clear whole line
+M.CLEARL_TO     = M.CSI .. "1K"    -- clear everything on the line before cursor
+M.CLEARL_FROM   = M.CSI .. "0K"    -- clear everything on the line after cursor
+
+-- Control sequences for manipulating cursor position
+M.CUU   = 'A'    -- move cursor one cell up (cursor up)
+M.CUD   = 'B'    -- //-- down (cursor down)
+M.CUF   = 'C'    -- //-- to the right (cursor forward)
+M.CUB   = 'D'    -- //-- to the left (cursor back)
+M.CNL   = 'E'    -- move cursor n (default 1) lines down, to the start of the line
+M.CPL   = 'F'    -- move cursor n (default 1) lines up, to the start of the line
+M.SU    = 'S'    -- scroll whole page up by n (default 1) lines
+M.SD    = 'T'    -- scroll whole page down by n (default 1) lines
+M.CUP   = 'H'    -- move cursor to row n, column m (default 1,1).
+
+------------------
+-- SGR sequences
+------------------
 -- The most commonly used attributes are the so-called Select Graphic Rendition (SGR) subset
--- of CSI. These are used to set display attributes (color, style etc). The list provided below
+-- of CSI sequences.
+-- These are used to set display attributes (color, style etc). The list provided below
 -- is not exhaustive: it includes only the basic, most widely supported attributes.
 --
 -- SGR SCI sequences are of the form: CSI n m (where n is a numeric value).
@@ -52,6 +80,9 @@ M.SGR_RESET   = M.CSI .. "0" .. "m"
 -- An arbitrary number of SGR attributes can be set as part of the same sequence,
 -- separated by semicolons: <CSI>30;31;35m
 --
+-- resets any terminal properties effected by previously applied SGR sequences.
+M.SGR_RESET   = M.CSI .. "0" .. "m"
+
 M.BOLD        = 1       -- make text bold  (increased intensity)
 M.FAINT       = 2       -- make text faint (decreased intensity)
 M.UNDERLINE   = 4       -- s.e.
@@ -105,28 +136,8 @@ M.BG_BRIGHT_BLUE     =  M.FG_BRIGHT_BLUE         + 10
 M.BG_BRIGHT_MAGENTA  =  M.FG_BRIGHT_MAGENTA      + 10
 M.BG_BRIGHT_CYAN     =  M.FG_BRIGHT_CYAN         + 10
 M.BG_BRIGHT_WHITE    =  M.FG_BRIGHT_WHITE        + 10
-
---------------------------------------------------------
--- Control sequences for manipulating cursor position
---------------------------------------------------------
-M.CLEARS        = M.CSI .. "2J"    -- clear whole screen
-M.CLEARS_TO     = M.CSI .. "1J"    -- clear everything on screen before cursor
-M.CLEARS_FROM   = M.CSI .. "0J"    -- clear everything on screen after cursor
-
-M.CLEARL        = M.CSI .. "2K"    -- clear whole line
-M.CLEARL_TO     = M.CSI .. "1K"    -- clear everything on the line before cursor
-M.CLEARL_FROM   = M.CSI .. "0K"    -- clear everything on the line after cursor
-
-M.CUU   = 'A'    -- move cursor one cell up (cursor up)
-M.CUD   = 'B'    -- //-- down (cursor down)
-M.CUF   = 'C'    -- //-- to the right (cursor forward)
-M.CUB   = 'D'    -- //-- to the left (cursor back)
-M.CNL   = 'E'    -- move cursor n (default 1) lines down, to the start of the line
-M.CPL   = 'F'    -- move cursor n (default 1) lines up, to the start of the line
-M.SU    = 'S'    -- scroll whole page up by n (default 1) lines
-M.SD    = 'T'    -- scroll whole page down by n (default 1) lines
-M.CUP   = 'H'    -- move cursor to row n, column m (default 1,1).
-
+---------------------------------------------------------------
+---------------------------------------------------------------
 
 --[[
     Return a CSI control sequence for conveying the specified movement action.
@@ -273,12 +284,17 @@ end
 <-- return, table
     A loader instance.
 --]]
-function M.get_percentage_loader(num_steps)
+function M.get_percentage_loader(num_steps, ...)
     local self           = Loader.new()
     self.whole           = num_steps -- total number of steps until 100%
     self.steps_completed = 0         -- number of steps completed so far
     self.progress        = math.floor(self.steps_completed / self.whole)
+    self.sgr_attr        = {...}  -- any number of SGR attributes specified
 
+    -- format before printing
+    function self.format__(char, ...)
+        return M.decorate(char, ...)
+    end
     -- increment step and adjust loader state
     function self.advance__(self)
         if self.steps_completed == self.whole then
@@ -290,7 +306,7 @@ function M.get_percentage_loader(num_steps)
 
     -- print a report of current progress to stdout
     function self.report__(self, msg)
-        print(string.format("%s%s %s", self.progress, '%', msg or ""))
+        print(string.format("%s %s", self.format__(self.progress .. '%', table.unpack(self.sgr_attr)), msg or ""))
     end
 
     return self

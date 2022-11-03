@@ -98,11 +98,16 @@ For specific comments on each of the above, see `termite.lua`.
 
 ### Examples
 
-#### Percentage Loaders
-
+In all of the examples below, the following is implied:
 ```Lua
 local termite = require("termite.lua")
+```
 
+#### Percentage Loaders
+
+##### Default Percentage Loader
+
+```Lua
 local n = 11
 local loader = termite.get_percentage_loader(n)
 for i=1,n do
@@ -114,9 +119,10 @@ loader:done("Done ...", 2)
 ```
 ![Default percentage Loader](files/default_percentage_loader.gif)
 
-```Lua
-local termite = require("termite.lua")
 
+##### Custom Percentage Loader
+
+```Lua
 local n = 11
 local loader = termite.get_percentage_loader(n, termite.INVERT)
 for i=1,n do
@@ -129,3 +135,141 @@ loader:done("Done ...", 2)
 ![Customized percentage Loader](files/inverted_percentage_loader.gif)
 
 
+#### Spinners
+
+##### Default Loading Spinner
+
+```Lua
+local n = 30
+local loader = termite.get_loading_spinner()
+for i=1,n do
+    loader:report("Loading ...")
+    loader:next()
+    os.execute("sleep 0.1")
+end
+loader:done("Done ...", 2)
+```
+![Default Loading Spinner](files/default_loading_spinner.gif)
+
+
+##### Custom Loading Spinner
+
+```Lua
+local n = 30
+local loader = termite.get_loading_spinner({"_", "(", ")"}, termite.FG_WHITE, termite.BG_BLACK)
+for i=1,n do
+    loader:report("Loading ...")
+    loader:next()
+    os.execute("sleep 0.1")
+end
+loader:done("Done ...", 2)
+```
+![Custom Loading Spinner](files/custom_loading_spinner.gif)
+
+
+#### Progress Bars
+
+##### Default Progress Bar
+
+```Lua
+local n = 7
+local loader = termite.get_progress_bar(n)
+for i=1,n do
+    loader:report("Loading ...")
+    loader:next()
+    os.execute("sleep 0.1")
+end
+loader:done("Done ...", 1)
+```
+![Default Progress Bar](files/default_progress_bar.gif)
+
+##### Custom Progress Bars
+
+```Lua
+local n = 7
+local loader = termite.get_progress_bar(n, 23, '|', '|', '+', termite.decorate('-', termite.INVERT))
+for i=1,n do
+    loader:report("Loading ...")
+    loader:next()
+    os.execute("sleep 0.1")
+end
+loader:done("Done ...", 1)
+```
+![Custom Progress Bar 1](files/custom_progress_bar1.gif)
+
+
+```Lua
+local n = 7
+local loader = termite.get_progress_bar(n, 23, '|', '|', termite.decorate(' ', termite.INVERT), ' ')
+for i=1,n do
+    loader:report("Loading ...")
+    loader:next()
+    os.execute("sleep 0.1")
+end
+loader:done("Done ...", 1)
+```
+![Custom Progress Bar 2](files/custom_progress_bar2.gif)
+
+
+#### Ouroubourous Bars
+
+##### Default Ouroborous Bar
+
+```Lua
+local n = 100
+local loader = termite.get_ouroborous_bar()
+for i=1,n do
+    loader:report("Loading ...")
+    loader:next()
+    os.execute("sleep 0.1")
+end
+loader:done("Done ...", 1)
+```
+![Default Ouroborous Bar](files/default_ouroborous_bar.gif)
+
+
+##### Custom Ouroborous Bars
+
+```Lua
+local n = 100
+local loader = termite.get_ouroborous_bar(18, '|', '|', termite.decorate(' ', termite.INVERT), '|')
+for i=1,n do
+    loader:report("Loading ...")
+    loader:next()
+    os.execute("sleep 0.1")
+end
+loader:done("Done ...", 1)
+```
+![Custom Ouroborous Bar](files/custom_ouroborous_bar.gif)
+
+
+#### Cyclic Loaders
+
+##### Default Cyclic Loaders
+
+```Lua
+local n = 50
+local loader = termite.get_cyclic_loader()
+for i=1,n do
+    loader:report("Loading ...")
+    loader:next()
+    os.execute("sleep 0.1")
+end
+loader:done("Done ...", 1)
+```
+![Default Cyclic Loader](files/default_cyclic_loader.gif)
+
+
+##### Custom Cyclic Loaders
+
+```Lua
+local n = 50
+local loader = termite.get_cyclic_loader(10, ' ', ' ', {"\\", "|", "/", "-" }, termite.decorate(' ', termite.INVERT), termite.INVERT)
+for i=1,n do
+    loader:report("Loading ...")
+    loader:next()
+    os.execute("sleep 0.1")
+end
+loader:done("Done ...", 1)
+```
+![Custom Cyclic Loader](files/custom_cyclic_loader.gif)

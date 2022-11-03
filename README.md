@@ -112,7 +112,7 @@ for i=1,n do
 end
 loader:done("Done ...", 2)
 ```
-[Default percentage Loader](#files/default_percentage_loader.gif)
+![Default percentage Loader](#files/default_percentage_loader.gif)
 
 ```Lua
 local termite = require("termite.lua")
@@ -126,6 +126,6 @@ for i=1,n do
 end
 loader:done("Done ...", 2)
 ```
-[Customized percentage Loader](#files/inverted_percentage_loader.gif)
+![Customized percentage Loader](#files/inverted_percentage_loader.gif)
 
 

@@ -258,14 +258,14 @@ end
 -- Wait specified number of seconds before clearing so the user has
 -- time to see whatever final report (and optional message) is printed.
 function Loader.done(self, msg, waitsecs)
+    io.write(M.CLEARL)  -- clear current line
+
     self:report__(msg)
 
     if waitsecs then
         os.execute("sleep " .. tostring(waitsecs))
     end
-    -- note we need to move 2 lines UP because we start 1 line below, AND print
-    -- will append a '\n' as well when we print this.
-    print(M.move(M.CPL, 2))  -- clear
+    io.write(M.move(M.CPL, 1) .. M.CLEARL)  -- clear previous line
 end
 
 -- Create Loader stub with public interface implementation

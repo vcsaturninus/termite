@@ -250,7 +250,7 @@ end
 
 function Loader.report(self, msg)
     self:report__(msg)
-    print(M.move(M.CPL, 2))  -- clear
+    io.write(M.move(M.CPL, 1) .. M.CLEARL)  -- clear previous line
 end
 
 -- Clear line: this must be done to prevent the case where a wide progress bar
@@ -258,8 +258,6 @@ end
 -- Wait specified number of seconds before clearing so the user has
 -- time to see whatever final report (and optional message) is printed.
 function Loader.done(self, msg, waitsecs)
-    io.write(M.CLEARL)  -- clear current line
-
     self:report__(msg)
 
     if waitsecs then

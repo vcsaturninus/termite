@@ -91,7 +91,7 @@ iteration around the loop, the following crucial point must be noted:
    the user does _not_ know the number of passes around the loop upfront. The
    progress indicator will therefore display not an actual progress indicator
    (as the name would imply) but a 'busy' anmation to indicate that work is
-   being done. This category includes spinners, 'cyclc laders' and 'ourobourous'
+   being done. This category includes spinners, 'cyclc laders' and 'ouroboros'
    bars (yes, I've just made these up).
 
 For specific comments on each of the above, see `termite.lua`.
@@ -211,7 +211,7 @@ loader:done("Done ...", 1)
 ![Custom Progress Bar 2](files/custom_progress_bar2.gif)
 
 
-#### Ouroubourous Bars
+#### Ouroboros Bars
 
 ##### Default Ouroborous Bar
 
